@@ -7,65 +7,77 @@ from pdf_integral import gauss_int
 from pdf_integral import gauss_int_jax
 import matplotlib.pyplot as plt
 
+def sample_from(f, bin_indices, xi_grid, xi1_grid, num_transistors, key):
+    x_i = xi_grid[bin_indices, :]
+    x_i1 = xi1_grid[bin_indices, :]
+    subkeys = jax.random.split(key, x_i.shape[0])
+    samples = jax.vmap(lambda xi, xi1, subkey: sample_between(xi, xi1, subkey, num_transistors))(x_i, x_i1, subkeys)
+    # function_values = jax.vmap(lambda args: f(*args))(samples)
+    return samples
 
-def sample_from(f, bin_indices, h, a, num_transistors, key):
-    x_i = bin_indices * h + a
-    x_i1 = (bin_indices + 1) * h + a
-    x_points = jax.vmap(lambda xi, xi1: jnp.linspace(xi, xi1, 4))(x_i, x_i1)
-    y_points = f(x_points)
-    normalized_coefficients = normalized_polynomial_coefficients(x_points, y_points)
-    subkeys = jax.random.split(key, normalized_coefficients.shape[0])
-    return jax.vmap(lambda coeffs, xi, xi1, subkey: polynomials_sample(coeffs, 4, xi, xi1, num_transistors, subkey))(normalized_coefficients, x_i, x_i1, subkeys)
+def sample_between(xi, xi1, key, num_transistors):
+    subkeys = jax.random.split(key, xi.shape[0])
+    random_values = jax.vmap(lambda xi, xi1, subkey: xi + (xi1 - xi) * standard_uniform(num_transistors, subkey, 1)[0])(xi, xi1, subkeys)
+    return random_values
 
-def normalized_polynomial_coefficients(x_points, y_points):
-    def polynomial_fit(x_points, y_points):
-        coefficients = polyfit(x_points, y_points, 3)
+# def sample_from(f, bin_indices, h, a, num_transistors, key):
+#     x_i = bin_indices * h + a
+#     x_i1 = (bin_indices + 1) * h + a
+#     x_points = jax.vmap(lambda xi, xi1: jnp.linspace(xi, xi1, 4))(x_i, x_i1)
+#     y_points = f(x_points)
+#     normalized_coefficients = normalized_polynomial_coefficients(x_points, y_points)
+#     subkeys = jax.random.split(key, normalized_coefficients.shape[0])
+#     return jax.vmap(lambda coeffs, xi, xi1, subkey: polynomials_sample(coeffs, 4, xi, xi1, num_transistors, subkey))(normalized_coefficients, x_i, x_i1, subkeys)
 
-        x1, x4 = x_points[0], x_points[-1]
+# def normalized_polynomial_coefficients(x_points, y_points):
+#     def polynomial_fit(x_points, y_points):
+#         coefficients = polyfit(x_points, y_points, 3)
 
-        area = integrate_polynomial(coefficients, x1, x4)
-        normalized_coefficients = coefficients / area
-        return normalized_coefficients
+#         x1, x4 = x_points[0], x_points[-1]
+
+#         area = integrate_polynomial(coefficients, x1, x4)
+#         normalized_coefficients = coefficients / area
+#         return normalized_coefficients
     
-    return jax.vmap(polynomial_fit)(x_points, y_points)
+#     return jax.vmap(polynomial_fit)(x_points, y_points)
 
-def polyfit(x, y, degree):
-    X = jnp.vander(x, N=degree + 1)
-    coeffs, residuals, rank, s = lstsq(X, y, rcond=None)
-    return coeffs
+# def polyfit(x, y, degree):
+#     X = jnp.vander(x, N=degree + 1)
+#     coeffs, residuals, rank, s = lstsq(X, y, rcond=None)
+#     return coeffs
 
-def integrate_polynomial(coefficients, a, b):
-    n = len(coefficients)
-    powers = jnp.arange(n - 1, -1, -1)
-    antiderivative_coeffs = coefficients / (powers + 1)
-    antiderivative_coeffs = jnp.append(antiderivative_coeffs, 0)
+# def integrate_polynomial(coefficients, a, b):
+#     n = len(coefficients)
+#     powers = jnp.arange(n - 1, -1, -1)
+#     antiderivative_coeffs = coefficients / (powers + 1)
+#     antiderivative_coeffs = jnp.append(antiderivative_coeffs, 0)
 
-    integral_b = jnp.polyval(antiderivative_coeffs, b)
-    integral_a = jnp.polyval(antiderivative_coeffs, a)
+#     integral_b = jnp.polyval(antiderivative_coeffs, b)
+#     integral_a = jnp.polyval(antiderivative_coeffs, a)
 
-    return integral_b - integral_a
-
-
-def polynomial_function(coefficients):
-    def poly(x):
-        return jnp.polyval(coefficients, x)
-    return poly
+#     return integral_b - integral_a
 
 
-def polynomials_sample(coefficients, B, a , b, num_transistors, key):
-    h = (b - a) / B
-    x_i = jnp.arange(B) * h + a
-    x_i1 = (jnp.arange(B) + 1) * h + a
-    probabilities = jax.vmap(lambda xi, xi1: gauss_int_jax(coefficients,xi, xi1))(x_i, x_i1)
-    probabilities /= jnp.sum(probabilities)
-    cumulative_probabilities = jnp.cumsum(probabilities)
-    random_numbers = standard_uniform(num_transistors, key, 2)
-    random_number = random_numbers[0]
-    bin_index = jnp.searchsorted(cumulative_probabilities, random_number, side='right')
-    bin_start = bin_index * h + a
-    bin_end = (bin_index + 1) * h + a
-    sample_random_number = random_numbers[1]
-    return sample_random_number * (bin_end - bin_start) + bin_start
+# def polynomial_function(coefficients):
+#     def poly(x):
+#         return jnp.polyval(coefficients, x)
+#     return poly
+
+
+# def polynomials_sample(coefficients, B, a , b, num_transistors, key):
+#     h = (b - a) / B
+#     x_i = jnp.arange(B) * h + a
+#     x_i1 = (jnp.arange(B) + 1) * h + a
+#     probabilities = jax.vmap(lambda xi, xi1: gauss_int_jax(coefficients,xi, xi1))(x_i, x_i1)
+#     probabilities /= jnp.sum(probabilities)
+#     cumulative_probabilities = jnp.cumsum(probabilities)
+#     random_numbers = standard_uniform(num_transistors, key, 2)
+#     random_number = random_numbers[0]
+#     bin_index = jnp.searchsorted(cumulative_probabilities, random_number, side='right')
+#     bin_start = bin_index * h + a
+#     bin_end = (bin_index + 1) * h + a
+#     sample_random_number = random_numbers[1]
+#     return sample_random_number * (bin_end - bin_start) + bin_start
 
 # def sample_from(f, i, h, a):
 #     x_i = i * h + a
